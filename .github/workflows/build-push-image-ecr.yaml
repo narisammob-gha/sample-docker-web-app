@@ -1,0 +1,57 @@
+
+name: Build and Push Docker Image to AWS ECR
+
+on:
+  # push:
+  #   branches:
+  #     - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    name: Build and Push to ECR
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Clone the GitHub repository
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # 2. Configure AWS CLI credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # 3. Login to the private ECR registry
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 4. Build and push the Docker image
+      - name: Build and push Docker image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t "$REGISTRY/$REPOSITORY:$IMAGE_TAG" .
+          docker push "$REGISTRY/$REPOSITORY:$IMAGE_TAG"
+
+          # Also update the latest tag for builds from main
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            docker tag "$REGISTRY/$REPOSITORY:$IMAGE_TAG" \
+              "$REGISTRY/$REPOSITORY:latest"
+            docker push "$REGISTRY/$REPOSITORY:latest"
+          fi
+
+      # 5. Print the published image reference
+      - name: echo/display pushed image
+        run: |
+          echo "Image pushed successfully:"
+          echo "${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}"
